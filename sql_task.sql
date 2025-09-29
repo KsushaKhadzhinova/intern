@@ -33,71 +33,63 @@ LEFT JOIN inventory i ON f.film_id = i.film_id
 WHERE i.inventory_id IS NULL;
 
 -- Display the top 3 actors who appeared the most in films within the "Children" category. If multiple actors have the same count, include all.
-WITH children_films AS (
-  SELECT fc.film_id
-  FROM film_category fc
-  JOIN category c ON fc.category_id = c.category_id
-  WHERE c.name = 'Children'
-),
-actor_counts AS (
+WITH actor_counts AS (
   SELECT fa.actor_id, a.first_name, a.last_name, COUNT(*) AS film_count
   FROM film_actor fa
-  JOIN children_films cf ON fa.film_id = cf.film_id
+  JOIN film_category fc ON fa.film_id = fc.film_id
+  JOIN category c ON fc.category_id = c.category_id
   JOIN actor a ON fa.actor_id = a.actor_id
+  WHERE c.name = 'Children'
   GROUP BY fa.actor_id, a.first_name, a.last_name
 )
 SELECT actor_id, first_name, last_name, film_count
 FROM actor_counts
 WHERE film_count >= (
-  SELECT DISTINCT film_count
+  SELECT film_count
   FROM actor_counts
   ORDER BY film_count DESC
   LIMIT 1 OFFSET 2
 )
 ORDER BY film_count DESC;
 
+
 -- Display cities with the count of active and inactive customers (active = 1). Sort by the count of inactive customers in descending order.
-SELECT ci.city, 
+SELECT 
+  MIN(ci.city) AS city, 
   SUM(CASE WHEN c.active = 1 THEN 1 ELSE 0 END) AS active_count,
   SUM(CASE WHEN c.active = 0 THEN 1 ELSE 0 END) AS inactive_count
 FROM customer c
 JOIN address a ON c.address_id = a.address_id
 JOIN city ci ON a.city_id = ci.city_id
-GROUP BY ci.city
+GROUP BY ci.city_id
 ORDER BY inactive_count DESC;
 
 
 -- Display the film category with the highest total rental hours in cities where customer.address_id belongs to that city and starts with the letter "a". Do the same for cities containing the symbol "-". Write this in a single query.
-WITH target_cities AS (
-  SELECT city_id
+WITH city_filter AS (
+  SELECT city_id, city
   FROM city
   WHERE LOWER(city) LIKE 'a%' OR city LIKE '%-%'
 ),
-customer_addresses AS (
-  SELECT c.customer_id, a.city_id
-  FROM customer c
-  JOIN address a ON c.address_id = a.address_id
-  WHERE a.city_id IN (SELECT city_id FROM target_cities)
-),
 rentals_with_lengths AS (
-  SELECT r.rental_id, i.film_id, c.city_id, f.length
+  SELECT r.rental_id, i.film_id, a.city_id, f.length
   FROM rental r
   JOIN inventory i ON r.inventory_id = i.inventory_id
   JOIN film f ON i.film_id = f.film_id
-  JOIN customer_addresses c ON r.customer_id = c.customer_id
+  JOIN customer c ON r.customer_id = c.customer_id
+  JOIN address a ON c.address_id = a.address_id
+  WHERE a.city_id IN (SELECT city_id FROM city_filter)
 )
 SELECT
-  ct.city_id,
-  ct.city,
+  cf.city_id,
+  cf.city,
   cat.name AS category,
   SUM(rwl.length) AS total_rental_hours
 FROM rentals_with_lengths rwl
 JOIN film_category fc ON rwl.film_id = fc.film_id
 JOIN category cat ON fc.category_id = cat.category_id
-JOIN city ct ON rwl.city_id = ct.city_id
-GROUP BY ct.city_id, ct.city, cat.name
-HAVING ct.city LIKE 'a%' OR ct.city LIKE '%-%'
+JOIN city_filter cf ON rwl.city_id = cf.city_id
+GROUP BY cf.city_id, cf.city, cat.name
 ORDER BY total_rental_hours DESC
 LIMIT 1;
-
 
