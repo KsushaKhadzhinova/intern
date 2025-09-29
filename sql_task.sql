@@ -34,7 +34,12 @@ WHERE i.inventory_id IS NULL;
 
 -- Display the top 3 actors who appeared the most in films within the "Children" category. If multiple actors have the same count, include all.
 WITH actor_counts AS (
-  SELECT fa.actor_id, a.first_name, a.last_name, COUNT(*) AS film_count
+  SELECT 
+    fa.actor_id, 
+    a.first_name, 
+    a.last_name, 
+    COUNT(*) AS film_count,
+    DENSE_RANK() OVER (ORDER BY COUNT(*) DESC) AS dense_rank
   FROM film_actor fa
   JOIN film_category fc ON fa.film_id = fc.film_id
   JOIN category c ON fc.category_id = c.category_id
@@ -44,12 +49,7 @@ WITH actor_counts AS (
 )
 SELECT actor_id, first_name, last_name, film_count
 FROM actor_counts
-WHERE film_count >= (
-  SELECT film_count
-  FROM actor_counts
-  ORDER BY film_count DESC
-  LIMIT 1 OFFSET 2
-)
+WHERE dense_rank <= 3
 ORDER BY film_count DESC;
 
 
@@ -67,29 +67,40 @@ ORDER BY inactive_count DESC;
 
 -- Display the film category with the highest total rental hours in cities where customer.address_id belongs to that city and starts with the letter "a". Do the same for cities containing the symbol "-". Write this in a single query.
 WITH city_filter AS (
-  SELECT city_id, city
+  SELECT city_id, city,
+    CASE
+      WHEN LOWER(city) LIKE 'a%' THEN 'Города, начинающиеся на "a"'
+      WHEN city LIKE '%-%' THEN 'Города, содержащие "-"'
+      ELSE 'Другое'
+    END AS city_group
   FROM city
   WHERE LOWER(city) LIKE 'a%' OR city LIKE '%-%'
 ),
-rentals_with_lengths AS (
-  SELECT r.rental_id, i.film_id, a.city_id, f.length
+rentals_with_durations AS (
+  SELECT 
+    r.rental_id, 
+    i.film_id, 
+    a.city_id,
+    EXTRACT(EPOCH FROM (r.return_date - r.rental_date)) / 3600 AS rental_hours -- разница в часах
   FROM rental r
   JOIN inventory i ON r.inventory_id = i.inventory_id
-  JOIN film f ON i.film_id = f.film_id
   JOIN customer c ON r.customer_id = c.customer_id
   JOIN address a ON c.address_id = a.address_id
   WHERE a.city_id IN (SELECT city_id FROM city_filter)
+    AND r.return_date IS NOT NULL -- учитывать только завершённые аренды
 )
 SELECT
-  cf.city_id,
-  cf.city,
+  cf.city_group,
   cat.name AS category,
-  SUM(rwl.length) AS total_rental_hours
-FROM rentals_with_lengths rwl
-JOIN film_category fc ON rwl.film_id = fc.film_id
+  SUM(rwd.rental_hours) AS total_rental_hours
+FROM rentals_with_durations rwd
+JOIN film_category fc ON rwd.film_id = fc.film_id
 JOIN category cat ON fc.category_id = cat.category_id
-JOIN city_filter cf ON rwl.city_id = cf.city_id
-GROUP BY cf.city_id, cf.city, cat.name
-ORDER BY total_rental_hours DESC
-LIMIT 1;
+JOIN city_filter cf ON rwd.city_id = cf.city_id
+GROUP BY cf.city_group, cat.name
+ORDER BY cf.city_group, total_rental_hours DESC;
+
+
+
+
 
