@@ -47,10 +47,11 @@ WITH actor_counts AS (
   WHERE c.name = 'Children'
   GROUP BY fa.actor_id, a.first_name, a.last_name
 )
-SELECT actor_id, first_name, last_name, film_count
+SELECT first_name, last_name, film_count
 FROM actor_counts
 WHERE dense_rank <= 3
 ORDER BY film_count DESC;
+
 
 
 -- Display cities with the count of active and inactive customers (active = 1). Sort by the count of inactive customers in descending order.
@@ -79,28 +80,19 @@ WITH city_filter AS (
 rentals_with_durations AS (
   SELECT 
     r.rental_id, 
-    i.film_id, 
     a.city_id,
-    EXTRACT(EPOCH FROM (r.return_date - r.rental_date)) / 3600 AS rental_hours -- разница в часах
+    EXTRACT(EPOCH FROM (r.return_date - r.rental_date)) / 3600 AS rental_hours
   FROM rental r
   JOIN inventory i ON r.inventory_id = i.inventory_id
   JOIN customer c ON r.customer_id = c.customer_id
   JOIN address a ON c.address_id = a.address_id
   WHERE a.city_id IN (SELECT city_id FROM city_filter)
-    AND r.return_date IS NOT NULL -- учитывать только завершённые аренды
+    AND r.return_date IS NOT NULL
 )
 SELECT
   cf.city_group,
-  cat.name AS category,
   SUM(rwd.rental_hours) AS total_rental_hours
 FROM rentals_with_durations rwd
-JOIN film_category fc ON rwd.film_id = fc.film_id
-JOIN category cat ON fc.category_id = cat.category_id
 JOIN city_filter cf ON rwd.city_id = cf.city_id
-GROUP BY cf.city_group, cat.name
-ORDER BY cf.city_group, total_rental_hours DESC;
-
-
-
-
-
+GROUP BY cf.city_group
+ORDER BY total_rental_hours DESC;
